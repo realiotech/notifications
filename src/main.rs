@@ -192,12 +192,11 @@ async fn get_eth_balance() -> Result<()> {
         .collect::<Vec<_>>();
     for element in low_balances.iter_mut() {
         println!("Address {:?}", element.account);
-        let p = PayloadBuilder::new()
+        let t = PayloadBuilder::new()
             .text(format!(
-                "ETH Balance in Account https://etherscan.io/address/{:?}  is low, current amount is {} ETH .. please feed me @Derek\n
-                Sync Status {:?}",
+                "ETH Balance in Account https://etherscan.io/address/{:?}  is low, current amount is {} ETH .. please feed me @Derek\n",
                 element.account,
-                element.balance.parse::<f64>().unwrap() / 1000000000000000000.0, get_stellar_sync_state().await
+                element.balance.parse::<f64>().unwrap() / 1000000000000000000.0
             ))
             .channel("#balances_bot")
             .username("Balances Bot")
@@ -205,12 +204,30 @@ async fn get_eth_balance() -> Result<()> {
             .build()
             .unwrap();
 
-        let res = slack.send(&p);
+        let res = slack.send(&t);
         match res {
             Ok(()) => println!("ok"),
             Err(x) => println!("ERR: {:?}", x),
         }
     }
+
+    let s = PayloadBuilder::new()
+    .text(format!(
+        "
+        Sync Status {:?}", get_stellar_sync_state().await
+    ))
+    .channel("#balances_bot")
+    .username("Balances Bot")
+    .icon_emoji(":eyes:")
+    .build()
+    .unwrap();
+
+let res = slack.send(&s);
+match res {
+    Ok(()) => println!("ok"),
+    Err(x) => println!("ERR: {:?}", x),
+}
+
     Ok(())
 }
 
