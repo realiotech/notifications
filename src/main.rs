@@ -1,27 +1,18 @@
 use dotenv;
 use ethers::etherscan::Client;
 use ethers::prelude::*;
-use eyre::Result;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use slack_hook::{PayloadBuilder, Slack};
 use std::env;
 use tokio::time::{interval, Duration};
-use tokio::{spawn, task};
-use tracing::*;
-
-// use std::{convert::TryFrom, path::Path, sync::Arc, time::Duration};
+use tokio::task;
 
 abigen!(
     RioToken,
     "./config/rio.json",
     event_derives(serde::Deserialize, serde::Serialize)
 );
-
-struct Channel {
-    name: String,
-    address: H160,
-}
 
 extern crate serde_derive;
 
@@ -81,7 +72,7 @@ pub struct FeeStats {
     href: String,
 }
 
-async fn get_stellar_sync_state() -> bool {
+async fn get_stellar_sync_state() -> () {
     let client = reqwest::Client::new();
     let response_realio = client
         .clone()
@@ -112,16 +103,30 @@ async fn get_stellar_sync_state() -> bool {
         .unwrap();
 
     let horizon_latest_block: i64 = response_horizon.ingest_latest_ledger;
-    let sync_status: bool;
-    if realio_latest_block >= horizon_latest_block - 2 {
-        sync_status = true
-    } else {
-        sync_status = false
+    if realio_latest_block < horizon_latest_block - 2 {
+        let slack = Slack::new(
+            env::var("SLACK_WEBHOOK_URL")
+                .expect("Slack Webhook URL not found")
+                .as_str(),
+        )
+        .unwrap();
+    
+        let t = PayloadBuilder::new()
+            .text(format!("Is our Horizon Node Synced out of sync\n"))
+            .channel("#balances_bot")
+            .username("Balances Bot")
+            .icon_emoji(":eyes:")
+            .build()
+            .unwrap();
+        let res = slack.send(&t);
+        match res {
+            Ok(()) => println!("ok"),
+            Err(x) => println!("ERR: {:?}", x),
+        }
     };
-    sync_status
 }
 
-async fn get_eth_balance() -> Result<()> {
+async fn get_eth_balance() -> () {
     let client = Client::new(
         Chain::Mainnet,
         env::var("ETHERSCAN_API_KEY").expect("Etherscan API Key not found"),
@@ -211,24 +216,6 @@ async fn get_eth_balance() -> Result<()> {
         }
     }
 
-    let s = PayloadBuilder::new()
-    .text(format!(
-        "
-        Sync Status {:?}", get_stellar_sync_state().await
-    ))
-    .channel("#balances_bot")
-    .username("Balances Bot")
-    .icon_emoji(":eyes:")
-    .build()
-    .unwrap();
-
-let res = slack.send(&s);
-match res {
-    Ok(()) => println!("ok"),
-    Err(x) => println!("ERR: {:?}", x),
-}
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -237,12 +224,13 @@ async fn main() {
     tracing_subscriber::fmt::init();
     dotenv::dotenv().ok();
     let forever = task::spawn(async {
-        let mut interval = interval(Duration::from_secs(600));
+        let mut interval = interval(Duration::from_secs(10));
 
         loop {
             interval.tick().await;
             tracing::info!("Calling balance");
-            get_eth_balance().await.unwrap();
+            tokio::join! { get_eth_balance(), get_stellar_sync_state()};
+
         }
     });
 
